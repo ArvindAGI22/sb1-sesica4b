@@ -7,16 +7,22 @@ import InputBar from '@/components/InputBar';
 import PersonaEditor from '@/components/PersonaEditor';
 import VoiceControl from '@/components/VoiceControl';
 import MemoryPanel from '@/components/MemoryPanel';
-import { useVoiceAgent } from '@/hooks/useVoiceAgent';
+import { useEnhancedVoiceAgent } from '@/hooks/useEnhancedVoiceAgent';
 import { useAgentPersona } from '@/hooks/useAgentPersona';
 import { Button } from '@/components/ui/button';
-import { Settings, Zap, MessageSquare, Brain } from 'lucide-react';
+import { Settings, Zap, MessageSquare, Brain, History, RefreshCw } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 
 export default function Home() {
   const [isPersonaEditorOpen, setIsPersonaEditorOpen] = useState(false);
   const [showVoiceControls, setShowVoiceControls] = useState(false);
   
   const { persona, updatePersona, isPersonaLoaded } = useAgentPersona();
+
+  // Generate user and session IDs (in production, these would come from auth)
+  const userId = 'user_demo_123';
+  const sessionId = `${userId}_${Date.now()}_session`;
+
   const {
     isListening,
     isThinking,
@@ -24,24 +30,52 @@ export default function Home() {
     messages,
     audioLevels,
     isConnected,
+    isLoadingHistory,
+    historyError,
+    isHydrated,
     startListening,
     stopListening,
-    sendMessage
-  } = useVoiceAgent(persona);
+    sendMessage,
+    clearMessages,
+    stats
+  } = useEnhancedVoiceAgent(persona, sessionId, userId);
 
   const agentStatus = isListening ? 'listening' : isThinking ? 'thinking' : isSpeaking ? 'speaking' : 'idle';
 
-  // Generate user and session IDs (in production, these would come from auth)
-  const userId = 'user_demo_123';
-  const sessionId = `${userId}_${Date.now()}_session`;
-
-  // Show loading state until persona is loaded
-  if (!isPersonaLoaded) {
+  // Show loading state until persona and conversation are loaded
+  if (!isPersonaLoaded || !isHydrated) {
     return (
       <div className="h-screen bg-gray-950 flex items-center justify-center">
         <div className="text-center">
           <Avatar status="idle" size="md" className="mx-auto mb-4" />
-          <p className="text-gray-400">Loading Zyra...</p>
+          <div className="flex items-center gap-2 justify-center mb-2">
+            <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
+            <p className="text-gray-400">
+              {!isPersonaLoaded ? 'Loading Zyra...' : 'Restoring conversation...'}
+            </p>
+          </div>
+          {isLoadingHistory && (
+            <p className="text-xs text-gray-500">Fetching conversation history</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state if conversation loading failed
+  if (historyError) {
+    return (
+      <div className="h-screen bg-gray-950 flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <Avatar status="idle" size="md" className="mx-auto mb-4" />
+          <p className="text-red-400 mb-4">Failed to load conversation history</p>
+          <p className="text-gray-500 text-sm mb-4">{historyError}</p>
+          <Button 
+            onClick={() => window.location.reload()} 
+            className="bg-emerald-600 hover:bg-emerald-700"
+          >
+            Retry
+          </Button>
         </div>
       </div>
     );
@@ -57,7 +91,7 @@ export default function Home() {
         }}></div>
       </div>
       
-      {/* Compact Header */}
+      {/* Enhanced Header with Conversation Stats */}
       <header className="relative z-10 px-6 py-4 flex justify-between items-center backdrop-blur-sm bg-black/20 border-b border-gray-800 flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-600 to-green-500 flex items-center justify-center">
@@ -67,15 +101,23 @@ export default function Home() {
             <h1 className="text-lg font-bold bg-gradient-to-r from-emerald-400 to-green-400 bg-clip-text text-transparent">
               {persona.name}
             </h1>
-            <p className="text-xs text-gray-400 capitalize flex items-center gap-1">
-              <div className={`w-1.5 h-1.5 rounded-full ${
-                agentStatus === 'listening' ? 'bg-emerald-400' :
-                agentStatus === 'thinking' ? 'bg-green-400' :
-                agentStatus === 'speaking' ? 'bg-lime-400' : 'bg-gray-500'
-              } animate-pulse`}></div>
-              {persona.tone} • {agentStatus}
-              {isConnected && <span className="text-emerald-400 ml-1">• Connected</span>}
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-gray-400 capitalize flex items-center gap-1">
+                <div className={`w-1.5 h-1.5 rounded-full ${
+                  agentStatus === 'listening' ? 'bg-emerald-400' :
+                  agentStatus === 'thinking' ? 'bg-green-400' :
+                  agentStatus === 'speaking' ? 'bg-lime-400' : 'bg-gray-500'
+                } animate-pulse`}></div>
+                {persona.tone} • {agentStatus}
+                {isConnected && <span className="text-emerald-400 ml-1">• Connected</span>}
+              </p>
+              {stats.hasHistory && (
+                <Badge variant="outline" className="border-blue-500/50 text-blue-400 text-xs">
+                  <History className="w-3 h-3 mr-1" />
+                  {stats.conversationTurns} turns
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
         
@@ -130,20 +172,27 @@ export default function Home() {
                     size="md"
                   />
                   
-                  {/* Compact Status */}
+                  {/* Enhanced Status with Memory Info */}
                   <div className="text-center">
                     <p className="text-sm font-medium text-white mb-1">
                       {isListening && "🎤 Listening..."}
-                      {isThinking && "🧠 Processing..."}
+                      {isThinking && "🧠 Processing with memory..."}
                       {isSpeaking && "🗣️ Speaking..."}
                       {agentStatus === 'idle' && `💫 Ready to chat`}
                     </p>
-                    <p className="text-xs text-gray-400">
-                      {agentStatus === 'idle' && "Tap avatar or speak to begin"}
-                      {isListening && "Speak naturally"}
-                      {isThinking && "Analyzing with Groq AI"}
-                      {isSpeaking && "Playing with ElevenLabs"}
-                    </p>
+                    <div className="flex items-center gap-2 justify-center">
+                      <p className="text-xs text-gray-400">
+                        {agentStatus === 'idle' && "Tap avatar or speak to begin"}
+                        {isListening && "Speak naturally"}
+                        {isThinking && "Analyzing with memory context"}
+                        {isSpeaking && "Playing with ElevenLabs"}
+                      </p>
+                      {stats.hasHistory && (
+                        <Badge variant="outline" className="border-emerald-500/50 text-emerald-400 text-xs">
+                          Memory Active
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -159,33 +208,82 @@ export default function Home() {
                 className="w-full max-w-2xl mx-auto"
               />
 
-              {/* Quick Actions - Only show when idle and no messages */}
-              {agentStatus === 'idle' && messages.length === 0 && (
-                <div className="flex gap-2 justify-center mt-4">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => sendMessage("Hello!")}
-                    className="border-gray-700 text-gray-300 hover:bg-gray-800 text-xs h-8 px-3"
-                  >
-                    Say Hello
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => sendMessage("What can you help me with?")}
-                    className="border-gray-700 text-gray-300 hover:bg-gray-800 text-xs h-8 px-3"
-                  >
-                    Get Help
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => sendMessage("Tell me a joke")}
-                    className="border-gray-700 text-gray-300 hover:bg-gray-800 text-xs h-8 px-3"
-                  >
-                    Tell a Joke
-                  </Button>
+              {/* Enhanced Quick Actions */}
+              {agentStatus === 'idle' && (
+                <div className="flex gap-2 justify-center mt-4 flex-wrap">
+                  {messages.length === 0 ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => sendMessage("Hello!")}
+                        className="border-gray-700 text-gray-300 hover:bg-gray-800 text-xs h-8 px-3"
+                      >
+                        Say Hello
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => sendMessage("What can you help me with?")}
+                        className="border-gray-700 text-gray-300 hover:bg-gray-800 text-xs h-8 px-3"
+                      >
+                        Get Help
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => sendMessage("Tell me a joke")}
+                        className="border-gray-700 text-gray-300 hover:bg-gray-800 text-xs h-8 px-3"
+                      >
+                        Tell a Joke
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => sendMessage("What do you remember about me?")}
+                        className="border-emerald-700 text-emerald-300 hover:bg-emerald-800 text-xs h-8 px-3"
+                      >
+                        <Brain className="w-3 h-3 mr-1" />
+                        Test Memory
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => sendMessage("Let's continue our conversation")}
+                        className="border-gray-700 text-gray-300 hover:bg-gray-800 text-xs h-8 px-3"
+                      >
+                        Continue Chat
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={clearMessages}
+                        className="border-red-700 text-red-300 hover:bg-red-800 text-xs h-8 px-3"
+                      >
+                        Clear History
+                      </Button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Conversation Stats */}
+              {stats.hasHistory && (
+                <div className="mt-4 text-center">
+                  <div className="inline-flex items-center gap-4 text-xs text-gray-500 bg-gray-900/50 px-3 py-1 rounded-full border border-gray-700">
+                    <span>{stats.totalMessages} messages</span>
+                    <span>•</span>
+                    <span>{stats.conversationTurns} turns</span>
+                    {stats.lastMessageTime && (
+                      <>
+                        <span>•</span>
+                        <span>Last: {stats.lastMessageTime.toLocaleTimeString()}</span>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
