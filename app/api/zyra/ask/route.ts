@@ -48,7 +48,14 @@ async function callGroqWithRetry(messages: any[], maxRetries = 3) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { message, persona, history = [], isInterrupted = false } = await request.json();
+    const { 
+      message, 
+      persona, 
+      history = [], 
+      isInterrupted = false,
+      systemPrompt,
+      options = {}
+    } = await request.json();
 
     // Validate API key
     if (!process.env.GROQ_API_KEY) {
@@ -71,8 +78,11 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Build system prompt based on persona
-    const systemPrompt = `You are ${persona.name}, an AI assistant with the following characteristics:
+    // Build system prompt - use provided systemPrompt or build from persona
+    let finalSystemPrompt = systemPrompt;
+    
+    if (!finalSystemPrompt && persona) {
+      finalSystemPrompt = `You are ${persona.name}, an AI assistant with the following characteristics:
 
 Personality: ${persona.personality}
 Tone: ${persona.tone}
@@ -91,16 +101,28 @@ Guidelines:
 ${isInterrupted ? '- The user interrupted you while you were speaking, so acknowledge this briefly and focus on their new input' : ''}
 
 Remember: You are having a real-time voice conversation, so respond as if speaking naturally.`;
+    }
 
-    // Convert history to Groq format
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      ...history.slice(-6).map((msg: Message) => ({
+    // Build messages array
+    let messages = [];
+    
+    if (finalSystemPrompt) {
+      messages.push({ role: 'system', content: finalSystemPrompt });
+    }
+    
+    // Add conversation history if provided
+    if (history && history.length > 0) {
+      const historyMessages = history.slice(-6).map((msg: Message) => ({
         role: msg.type === 'user' ? 'user' : 'assistant',
         content: msg.content
-      })),
-      { role: 'user', content: message }
-    ];
+      }));
+      messages.push(...historyMessages);
+    }
+    
+    // Add current user message
+    messages.push({ role: 'user', content: message });
+
+    console.log(`🤖 Processing request with ${messages.length} messages`);
 
     // Call Groq API with retry logic
     const completion = await callGroqWithRetry(messages);
@@ -108,9 +130,9 @@ Remember: You are having a real-time voice conversation, so respond as if speaki
 
     return NextResponse.json({ 
       response,
-      persona: persona.name,
+      persona: persona?.name || 'Assistant',
       timestamp: new Date().toISOString(),
-      model: 'llama3-8b-8192',
+      model: options.model || 'llama3-8b-8192',
       usage: completion.usage
     });
 
