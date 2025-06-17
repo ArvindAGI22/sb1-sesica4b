@@ -6,10 +6,11 @@ import ChatTimeline from '@/components/ChatTimeline';
 import InputBar from '@/components/InputBar';
 import PersonaEditor from '@/components/PersonaEditor';
 import VoiceControl from '@/components/VoiceControl';
+import MemoryPanel from '@/components/MemoryPanel';
 import { useVoiceAgent } from '@/hooks/useVoiceAgent';
 import { useAgentPersona } from '@/hooks/useAgentPersona';
 import { Button } from '@/components/ui/button';
-import { Settings, Zap, MessageSquare, Mic, MicOff } from 'lucide-react';
+import { Settings, Zap, MessageSquare, Brain } from 'lucide-react';
 
 export default function Home() {
   const [isPersonaEditorOpen, setIsPersonaEditorOpen] = useState(false);
@@ -29,6 +30,10 @@ export default function Home() {
   } = useVoiceAgent(persona);
 
   const agentStatus = isListening ? 'listening' : isThinking ? 'thinking' : isSpeaking ? 'speaking' : 'idle';
+
+  // Generate user and session IDs (in production, these would come from auth)
+  const userId = 'user_demo_123';
+  const sessionId = `${userId}_${Date.now()}_session`;
 
   // Show loading state until persona is loaded
   if (!isPersonaLoaded) {
@@ -75,6 +80,15 @@ export default function Home() {
         </div>
         
         <div className="flex items-center gap-2">
+          <MemoryPanel 
+            userId={userId} 
+            sessionId={sessionId}
+            trigger={
+              <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white hover:bg-white/10 h-8 px-3">
+                <Brain className="w-4 h-4" />
+              </Button>
+            }
+          />
           <Button
             variant="ghost"
             size="sm"
